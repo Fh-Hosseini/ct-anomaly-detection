@@ -124,11 +124,11 @@ def preprocess_volume(volume_path, mask_dir, output_path):
     lung_mask = combine_lung_masks(mask_dir)
     bbox = get_bounding_box(lung_mask)
 
-    # Crop the volume to the bounding box
+    # Crop the volume to the bounding box, add 1 because of python slicing 
     volume = volume[
-        bbox["x_min"]:bbox["x_max"],
-        bbox["y_min"]:bbox["y_max"],
-        bbox["z_min"]:bbox["z_max"],
+        bbox["x_min"]:bbox["x_max"] + 1,
+        bbox["y_min"]:bbox["y_max"] + 1,
+        bbox["z_min"]:bbox["z_max"] + 1,
     ]
 
     # Resample the volume to the target voxel spacing
