@@ -22,7 +22,7 @@ MASKS_ROOT = Path("/anvme/workspace/iwi5437h-ct-anomaly-detection/lung_masks")
 
 BRAIN_TRAIN_PATH = PROJECT_ROOT / "data/raw/no_chest_train.txt"
 BRAIN_VALID_PATH = PROJECT_ROOT / "data/raw/no_chest_valid.txt"
-INVALID_VOLUME_DF_PATH = PROJECT_ROOT / "data/processed/seg_invalid_volumes.csv"
+INVALID_SEG_LIST_PATH = PROJECT_ROOT / "data/processed/seg_invalid_volumes.csv"
 
 LABELS_DF_PATH = PROJECT_ROOT / "data/raw/CT-RATE_reports_full_gpt-oss-120b.xlsx"
 PROCESSED_LABELS_PATH = PROJECT_ROOT / "data/processed/labels_cleaned.csv"
@@ -125,19 +125,19 @@ def exclude_brain_scans(df, brain_train_path, brain_valid_path):
     return df_filtered
 
 
-def exclude_invalid_volumes(df, invalid_volume_df_path):
+def exclude_invalid_volumes(df, invalid_seg_list_path):
     """
     Exclude invalid volumes from the dataframe.
 
     Args:
         df: The dataframe containing information about all volumes and their labels.
-        invalid_volume_df_path: The path to the CSV file containing the list of invalid volume names. 
+        invalid_seg_list_path: The path to the CSV file containing the list of invalid volume names. 
     
     Returns:
         df_filtered: A filtered dataframe that excludes the invalid volumes.
     """
 
-    invalid_vol_df = pd.read_csv(invalid_volume_df_path)
+    invalid_vol_df = pd.read_csv(invalid_seg_list_path)
     invalid_volumes = set(invalid_vol_df["volume_name"].tolist())
 
     invalid_mask = df["VolumeName"].str.replace(".nii.gz", "").isin(invalid_volumes)
@@ -228,7 +228,7 @@ def main():
     print(f"Loaded labels with {len(df)} number of rows")
 
     df_filtered = exclude_brain_scans(df, BRAIN_TRAIN_PATH, BRAIN_VALID_PATH)
-    df_filtered = exclude_invalid_volumes(df_filtered, INVALID_VOLUME_DF_PATH)
+    df_filtered = exclude_invalid_volumes(df_filtered, INVALID_SEG_LIST_PATH)
 
     df_binarized = create_binary_labels(df_filtered)
 

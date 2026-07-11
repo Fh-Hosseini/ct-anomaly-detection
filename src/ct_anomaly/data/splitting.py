@@ -10,7 +10,7 @@ from sklearn.model_selection import train_test_split
 
 PROJECT_ROOT = Path("/home/hpc/iwi5/iwi5437h/ct-anomaly-detection")
 CLEANED_LABELS_PATH = PROJECT_ROOT / "data/processed/labels_cleaned.csv"
-LABELS_WITH_SPLIT_PATH = PROJECT_ROOT / "data/processed/labels_with_split.csv"
+LABELS_WITH_SPLIT_PATH = PROJECT_ROOT / "data/processed/labels_cleaned_with_split.csv"
 
 
 
