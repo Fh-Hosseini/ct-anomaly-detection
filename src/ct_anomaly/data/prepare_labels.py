@@ -22,7 +22,8 @@ MASKS_ROOT = Path("/anvme/workspace/iwi5437h-ct-anomaly-detection/lung_masks")
 
 BRAIN_TRAIN_PATH = PROJECT_ROOT / "data/raw/no_chest_train.txt"
 BRAIN_VALID_PATH = PROJECT_ROOT / "data/raw/no_chest_valid.txt"
-INVALID_SEG_LIST_PATH = PROJECT_ROOT / "data/processed/seg_invalid_volumes.csv"
+INVALID_SEGMENTATION_LIST_PATH = PROJECT_ROOT / "data/processed/seg_invalid_volumes.csv"
+INVALID_PREPROCESSING_LIST_PATH = PROJECT_ROOT / "data/processed/preprocess_invalid_volumes.csv"
 
 LABELS_DF_PATH = PROJECT_ROOT / "data/raw/CT-RATE_reports_full_gpt-oss-120b.xlsx"
 PROCESSED_LABELS_PATH = PROJECT_ROOT / "data/processed/labels_cleaned.csv"
@@ -68,8 +69,16 @@ def load_and_parse_labels_df(filepath):
     # drop unnamed and empty columns
     df = df[["Predicted_label", "VolumeName", "Findings_EN", "Impressions_EN"]].copy()
 
-    # parse VolumeName: patient_id, scan_id, reconstruction
-    df_volume_data = df["VolumeName"].apply(parse_volume_name).apply(pd.Series)
+    # Rename columns to snake_case
+    df = df.rename(columns={
+    "Predicted_label": "predicted_label",
+    "VolumeName": "volume_name",
+    "Findings_EN": "findings_en",
+    "Impressions_EN": "impressions_en",
+})
+
+    # parse volume_name: patient_id, scan_id, reconstruction
+    df_volume_data = df["volume_name"].apply(parse_volume_name).apply(pd.Series)
     df_parsed = pd.concat([df, df_volume_data], axis=1)
 
     return df_parsed
@@ -116,7 +125,7 @@ def exclude_brain_scans(df, brain_train_path, brain_valid_path):
 
     print(f"Number of brain scans to exclude: {len(brain_scans)}")
 
-    brain_mask = df["VolumeName"].isin(brain_scans)
+    brain_mask = df["volume_name"].isin(brain_scans)
     df_filtered = df[~brain_mask].copy()
 
     print(f"\nNumber of all volumes before filtering: {len(df)}")
@@ -125,22 +134,22 @@ def exclude_brain_scans(df, brain_train_path, brain_valid_path):
     return df_filtered
 
 
-def exclude_invalid_volumes(df, invalid_seg_list_path):
+def exclude_invalid_volumes(df, invalid_list_path):
     """
     Exclude invalid volumes from the dataframe.
 
     Args:
         df: The dataframe containing information about all volumes and their labels.
-        invalid_seg_list_path: The path to the CSV file containing the list of invalid volume names. 
+        invalid_list_path: The path to the CSV file containing the list of invalid volume names. 
     
     Returns:
         df_filtered: A filtered dataframe that excludes the invalid volumes.
     """
 
-    invalid_vol_df = pd.read_csv(invalid_seg_list_path)
+    invalid_vol_df = pd.read_csv(invalid_list_path)
     invalid_volumes = set(invalid_vol_df["volume_name"].tolist())
 
-    invalid_mask = df["VolumeName"].str.replace(".nii.gz", "").isin(invalid_volumes)
+    invalid_mask = df["volume_name"].str.replace(".nii.gz", "").isin(invalid_volumes)
     df_filtered = df[~invalid_mask].copy()
 
     print(f"Removed {len(invalid_volumes)} invalid volumes")
@@ -163,7 +172,7 @@ def create_binary_labels(df):
 
     # combine unhealthy(2) and borderline(1) labels into one class (unhealthy) and keep healthy(0) as is
     df = df.copy()
-    df["binary_label"] = df["Predicted_label"].apply(lambda x: 0 if x == 0 else 1)
+    df["binary_label"] = df["predicted_label"].apply(lambda x: 0 if x == 0 else 1)
 
     # TODO MAYBE UNCOMMENT THIS
     # assign the maximum label for all reconstructions of the same scan
@@ -208,14 +217,14 @@ def add_path_columns(df):
     # add a column for the ct volume data path
     df["volume_data_path"] = df.apply(
         lambda row: str(get_volume_data_path(
-            row["VolumeName"].replace(".nii.gz", ""),
+            row["volume_name"].replace(".nii.gz", ""),
             row["patient_id"],
             row["scan_id"]
         )), axis=1
     )
 
     # add a column for the lung mask directory path
-    df["mask_dir"] = df["VolumeName"].apply(
+    df["mask_dir"] = df["volume_name"].apply(
         lambda v: str(MASKS_ROOT / v.replace(".nii.gz", ""))
     )
 
@@ -228,7 +237,8 @@ def main():
     print(f"Loaded labels with {len(df)} number of rows")
 
     df_filtered = exclude_brain_scans(df, BRAIN_TRAIN_PATH, BRAIN_VALID_PATH)
-    df_filtered = exclude_invalid_volumes(df_filtered, INVALID_SEG_LIST_PATH)
+    df_filtered = exclude_invalid_volumes(df_filtered, INVALID_SEGMENTATION_LIST_PATH)
+    df_filtered = exclude_invalid_volumes(df_filtered, INVALID_PREPROCESSING_LIST_PATH)
 
     df_binarized = create_binary_labels(df_filtered)
 
