@@ -47,12 +47,12 @@ def create_scan_split(df, random_state=42):
         df_final: The final dataframe with the split information merged back to the volume level.
     """
 
-    patient_df = df.groupby(["patient_id"])["binary_label"].max().reset_index()
-    patient_df = patient_df.rename(columns={"binary_label": "patient_label"})
+    scan_df = df.groupby(["patient_id", "scan_id"])["binary_label"].max().reset_index()
+    scan_df = scan_df.rename(columns={"binary_label": "scan_label"})
 
     # separate healthy and unhealthy scans
-    healthy_scans = patient_df[patient_df["patient_label"] == 0]
-    anomalous_scans = patient_df[patient_df["patient_label"] == 1]
+    healthy_scans = scan_df[scan_df["scan_label"] == 0]
+    anomalous_scans = scan_df[scan_df["scan_label"] == 1]
 
     # split healthy and unhealthy scans separately to maintain class balance across the splits
     healthy_train, healthy_val, healthy_test = _split_train_val_test(healthy_scans, random_state)
@@ -68,20 +68,20 @@ def create_scan_split(df, random_state=42):
     anomalous_test["split"] = "test"
 
     # concatenate all the dataframes to get the final scan level dataframe with the split information
-    patient_df_split = pd.concat([
+    scan_df_split = pd.concat([
         healthy_train, healthy_val, healthy_test,
         anomalous_train, anomalous_val, anomalous_test,
     ])
 
-    print(f"Total number of Scans: {len(patient_df_split)}")
+    print(f"Total number of Scans: {len(scan_df_split)}")
     print("\nData split distribution:")
-    print(patient_df_split["split"].value_counts())
+    print(scan_df_split["split"].value_counts())
 
 
     # map split back onto the volume level dataframe
     df_split = df.merge(
-        patient_df_split[["patient_id", "scan_id", "split"]],
-        on=["patient_id"],
+        scan_df_split[["patient_id", "scan_id", "split"]],
+        on=["patient_id", "scan_id"],
         how="left",
     )
 
