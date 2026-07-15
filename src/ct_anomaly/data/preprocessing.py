@@ -19,20 +19,6 @@ from scipy.ndimage import zoom
 from src.ct_anomaly.data.segmentation import combine_lung_lobes_masks, get_bounding_box
 
 
-# Target voxel spacing in mm --- to try: (1.5, 1.5, 1.5) or (0.75, 0.75, 1.5)
-TARGET_VOXEL_SPACING = (0.75, 0.75, 1.5)
-
-# Target shape after resampling --- to try: (128, 128, 128) or (480, 480, 240)
-TARGET_SHAPE = (480, 480, 240)
-
-# HU clipping range 
-TARGET_HU_MIN = -1000
-TARGET_HU_MAX = 400 # to try: 200, 400, 1000
-
-# Margin to add around the bounding box when cropping
-BBOX_MARGIN = 10
-
-
 def load_volume(volume_path):
     """
     Load a CT volume from a NIfTI file.
@@ -50,34 +36,45 @@ def load_volume(volume_path):
     return volume, current_voxel_spacing
 
 
-def crop_to_lung_bounding_box(volume, masks_dir, margin=0):
+def crop_to_lung_bounding_box(data, bbox, bbox_margin):
     """
     Crop a 3D volume to the bounding box of the lungs using the provided lung masks.
 
     Args:
-        volume: 3D numpy array representing the volume to be cropped.
-        masks_dir: Directory containing the lung masks for the volume.
-        margin: Margin to add around the bounding box (default: 0).
+        data: 3D numpy array representing the volume to be cropped.
+        bbox: Dictionary containing the bounding box coordinates (x_min, x_max, y_min, y_max, z_min, z_max).
+        bbox_margin: Margin to add around the bounding box (default: BBOX_MARGIN).
 
     Returns:
         Cropped volume as a 3D numpy array.
     """
 
-    masks_dir = Path(masks_dir)
-    
-    lung_mask = combine_lung_lobes_masks(masks_dir)
-    bbox = get_bounding_box(lung_mask)
-
-    # Crop the volume to the bounding box, add 1 because of python slicing 
-    cropped_lung_volume = volume[
-        max(0, bbox["x_min"] - margin) : min(bbox["x_max"] + margin, volume.shape[0]) + 1,
-        max(0, bbox["y_min"] - margin) : min(bbox["y_max"] + margin, volume.shape[1]) + 1,
-        max(0, bbox["z_min"] - margin) : min(bbox["z_max"] + margin, volume.shape[2]) + 1
+    # Crop to lung bounding box using the combined lung mask
+    cropped = data[
+        max(0, bbox["x_min"] - bbox_margin) : min(bbox["x_max"] + bbox_margin, data.shape[0]) + 1,
+        max(0, bbox["y_min"] - bbox_margin) : min(bbox["y_max"] + bbox_margin, data.shape[1]) + 1,
+        max(0, bbox["z_min"] - bbox_margin) : min(bbox["z_max"] + bbox_margin, data.shape[2]) + 1
     ]
-    return cropped_lung_volume
 
+    return cropped
 
-def resample_volume(volume, current_voxel_spacing, target_voxel_spacing=TARGET_VOXEL_SPACING):
+def apply_mask(volume, mask, hu_min):
+    """
+    Apply a binary mask to a 3D volume, setting values outside the mask to a specified minimum HU value.
+
+    Args:
+        volume: 3D numpy array representing the volume to be masked.
+        mask: 3D binary numpy array representing the mask (1 for lung regions, 0 for non-lung regions).
+        hu_min: Minimum HU value to set for voxels outside the mask (default: TARGET_HU_MIN).
+    
+    Returns:
+        Masked volume as a 3D numpy array, with values outside the mask set to hu_min.
+    """
+    volume = volume.copy()
+    volume[~mask.astype(bool)] = hu_min  # Set values outside the mask to hu_min
+    return volume
+
+def resample_volume(volume, current_voxel_spacing, target_voxel_spacing):
     """
     Resample a 3D volume to the target voxel spacing using trilinear interpolation.
 
@@ -99,7 +96,7 @@ def resample_volume(volume, current_voxel_spacing, target_voxel_spacing=TARGET_V
     return resampled_volume
 
 
-def resize_volume(volume, target_shape=TARGET_SHAPE):
+def resize_volume(volume, target_shape):
     """
     Resize a 3D volume to the target shape using trilinear interpolation.
 
@@ -120,14 +117,14 @@ def resize_volume(volume, target_shape=TARGET_SHAPE):
     return resized_volume
 
 
-def clip_and_normalize(volume, hu_min=TARGET_HU_MIN, hu_max=TARGET_HU_MAX):
+def clip_and_normalize(volume, hu_min, hu_max):
     """
     Clip the HU values of a 3D volume to a specified range and normalize them to [-1, +1].
 
     Args:
         volume: 3D numpy array representing the volume to be clipped and normalized.
-        hu_min: Minimum HU value for clipping (default: -1000).
-        hu_max: Maximum HU value for clipping (default: +1000).
+        hu_min: Minimum HU value for clipping.
+        hu_max: Maximum HU value for clipping.
         
     Returns:
         Clipped and normalized volume as a 3D numpy array with values in the range [-1, +1].
@@ -144,39 +141,54 @@ def clip_and_normalize(volume, hu_min=TARGET_HU_MIN, hu_max=TARGET_HU_MAX):
 
 
 
-def preprocess_volume(volume_path, masks_dir, output_path):
+def preprocess_one_volume(volume_path, masks_dir, preprocessed_path, target_voxel_spacing, target_shape, hu_min, hu_max, bbox_margin, lung_only):
     """
     Preprocess a CT volume by loading, cropping to lung bounding box, resampling, resizing, clipping HU values, normalizing, and saving the preprocessed volume.
 
     Args:
         volume_path: Path to the input CT volume in NIfTI format.
         masks_dir: Directory containing the lung masks for the volume.
-        output_path: Path to save the preprocessed volume as a .npz file.
+        preprocessed_path: Path to save the preprocessed volume as a .npz file.
+        target_voxel_spacing: Target voxel spacing in mm (x, y, z) for resampling.
+        target_shape: Target shape (x, y, z) for resizing.
+        hu_min: Minimum HU value for clipping.
+        hu_max: Maximum HU value for clipping.
+        bbox_margin: Margin to add around the bounding box when cropping.
+        lung_only: If True, apply the lung mask to the volume after cropping.
     """
     
     print(f"Processing: {Path(volume_path).name}")
 
+    # get lung bounding box from masks
+    masks_dir = Path(masks_dir)
+    lung_mask = combine_lung_lobes_masks(masks_dir)
+    bbox = get_bounding_box(lung_mask)
+
     # Load
     volume, spacing = load_volume(volume_path)
 
+    cropped_volume = crop_to_lung_bounding_box(volume, bbox, bbox_margin)
     # Crop to lung bounding box
-    volume = crop_to_lung_bounding_box(volume, masks_dir)
-    print(f"    After crop: {volume.shape}")
+    if lung_only:
+        cropped_mask = crop_to_lung_bounding_box(lung_mask, bbox, bbox_margin)
+        cropped_volume = apply_mask(cropped_volume, cropped_mask, hu_min=hu_min)        
+
+    print(f"    After crop: {cropped_volume.shape}")
 
     # Resample to target spacing
-    volume = resample_volume(volume, spacing)
-    print(f"    After resample: {volume.shape}")
+    volume_resampled = resample_volume(cropped_volume, spacing, target_voxel_spacing=target_voxel_spacing)
+    print(f"    After resample: {volume_resampled.shape}")
 
     # Resize to fixed size
-    volume = resize_volume(volume)
-    print(f"    After resize: {volume.shape}")
+    volume_resized = resize_volume(volume_resampled, target_shape=target_shape)
+    print(f"    After resize: {volume_resized.shape}")
 
     # Clip and normalize
-    volume = clip_and_normalize(volume)
+    volume_normalized = clip_and_normalize(volume_resized, hu_min=hu_min, hu_max=hu_max)
 
     # Save
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(output_path, volume=volume)
-    print(f"    Saved to: {output_path}")
-    print(f"    Done: output shape:{volume.shape}")
+    preprocessed_path = Path(preprocessed_path)
+    preprocessed_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(preprocessed_path, volume=volume_normalized)
+    print(f"    Saved to: {preprocessed_path}")
+    print(f"    Done: preprocessed shape:{volume_normalized.shape}")
