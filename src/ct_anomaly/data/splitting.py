@@ -1,5 +1,5 @@
 """
-Create a data split for the CT-RATE dataset, ensuring that all volumes from the same scan of a patient are in the same split.
+Create a data split for the CT-RATE dataset, ensuring that all volumes from the same patient are in the same split.
 
 """
 
@@ -14,12 +14,13 @@ LABELS_WITH_SPLIT_PATH = PROJECT_ROOT / "data/processed/labels_cleaned_with_spli
 
 
 
-def _split_train_val_test(df, random_state = 42):
+def _split_train_val_test(df, stratify_column, random_state = 42):
     """
     Split the df into three sets: train(70%), val(15%), and test(15%)
 
     Args:
         df: The dataframe to be split.
+        stratify_column: The column to use for stratification to maintain class balance across the splits.
         random_state: The random state for reproducibility. 
     
     Returns:
@@ -28,16 +29,17 @@ def _split_train_val_test(df, random_state = 42):
         test: The test set dataframe.
     """
 
-    train, tmp = train_test_split(df, test_size=0.30, random_state=random_state) # split into 70% train and 30% temp (val + test)
-    val, test = train_test_split(tmp, test_size=0.50, random_state=random_state) # split temp into 50% val and 50% test (15% each of the original data)
+    train, tmp = train_test_split(df, test_size=0.30, stratify=df[stratify_column], random_state=random_state) # split into 70% train and 30% temp (val + test)
+    val, test = train_test_split(tmp, test_size=0.50, stratify=tmp[stratify_column], random_state=random_state) # split temp into 50% val and 50% test (15% each of the original data)
     return train, val, test
 
 
 
-def create_scan_split(df, random_state=42):
+
+
+def create_patient_split(df, random_state=42):
     """
-    Create a data split, ensuring that all volumes from the same scan of a patient are in the same split. 
-    The split is done separately for healthy and unhealthy scans to maintain class balance across the splits.
+    Create a data split, ensuring that all volumes from the same patient are in the same split. 
 
     Args:
         df: The metadata dataframe containing information about all volumes, including the original predicted labels.
@@ -48,39 +50,25 @@ def create_scan_split(df, random_state=42):
     """
 
     patient_df = df.groupby(["patient_id"])["binary_label"].max().reset_index()
-    patient_df = patient_df.rename(columns={"binary_label": "patient_label"})
+    patient_df = patient_df.rename(columns={"binary_label": "patient_max_label"})
 
-    # separate healthy and unhealthy scans
-    healthy_scans = patient_df[patient_df["patient_label"] == 0]
-    anomalous_scans = patient_df[patient_df["patient_label"] == 1]
+    train, val, test = _split_train_val_test(patient_df, stratify_column="patient_max_label", random_state=random_state)
 
-    # split healthy and unhealthy scans separately to maintain class balance across the splits
-    healthy_train, healthy_val, healthy_test = _split_train_val_test(healthy_scans, random_state)
-    anomalous_train, anomalous_val, anomalous_test = _split_train_val_test(anomalous_scans, random_state)
+    train["split"] = "train"
+    val["split"] = "val"
+    test["split"] = "test"
 
-    # add the split column to each df
-    healthy_train["split"] = "train"
-    healthy_val["split"] = "val"
-    healthy_test["split"] = "test"
+    # concatenate all the dataframes to get the final patient level dataframe with the split information
+    patient_df_split = pd.concat([train, val, test])
 
-    anomalous_train["split"] = "train"
-    anomalous_val["split"] = "val"
-    anomalous_test["split"] = "test"
-
-    # concatenate all the dataframes to get the final scan level dataframe with the split information
-    patient_df_split = pd.concat([
-        healthy_train, healthy_val, healthy_test,
-        anomalous_train, anomalous_val, anomalous_test,
-    ])
-
-    print(f"Total number of Scans: {len(patient_df_split)}")
+    print(f"Total number of Patients: {len(patient_df_split)}")
     print("\nData split distribution:")
     print(patient_df_split["split"].value_counts())
 
 
     # map split back onto the volume level dataframe
     df_split = df.merge(
-        patient_df_split[["patient_id", "scan_id", "split"]],
+        patient_df_split[["patient_id", "split"]],
         on=["patient_id"],
         how="left",
     )
@@ -93,10 +81,11 @@ def create_scan_split(df, random_state=42):
     return df_split
 
 
+
 def main():
 
     df = pd.read_csv(CLEANED_LABELS_PATH)
-    df_final = create_scan_split(df, random_state=42)
+    df_final = create_patient_split(df, random_state=42)
 
     LABELS_WITH_SPLIT_PATH.parent.mkdir(parents=True, exist_ok=True)
     df_final.to_csv(LABELS_WITH_SPLIT_PATH, index=False)
