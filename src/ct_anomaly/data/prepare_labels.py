@@ -26,6 +26,7 @@ INVALID_SEGMENTATION_LIST_PATH = PROJECT_ROOT / "data/processed/seg_invalid_volu
 INVALID_PREPROCESSING_LIST_PATH = PROJECT_ROOT / "data/processed/preprocess_invalid_volumes.csv"
 
 LABELS_DF_PATH = PROJECT_ROOT / "data/raw/CT-RATE_reports_full_gpt-oss-120b.xlsx"
+CORRECTED_LABELS_PATH = PROJECT_ROOT / "data/processed/mixed_label_scans_corrected.csv"
 PROCESSED_LABELS_PATH = PROJECT_ROOT / "data/processed/labels_cleaned.csv"
 
 
@@ -82,6 +83,31 @@ def load_and_parse_labels_df(filepath):
     df_parsed = pd.concat([df, df_volume_data], axis=1)
 
     return df_parsed
+
+
+def apply_corrected_labels(df, corrected_labels_path):
+    """
+    Apply corrected labels to the dataframe by overriding the predicted_label for the volumes listed in the corrected labels CSV.
+    Args:
+        df: The dataframe containing the original predicted labels.
+        corrected_labels_path: The path to the CSV file containing the corrected labels.
+    Returns:
+        df: The dataframe with the corrected labels applied.
+    """
+
+    corrected_df = pd.read_csv(corrected_labels_path, sep=";")
+    
+    corrected_df = corrected_df[["VolumeName", "Corrected_label"]].copy()
+    corrected_df = corrected_df.rename(columns={"VolumeName": "volume_name"})
+
+    df = df.merge(corrected_df, on="volume_name", how="left")
+    is_corrected = df["Corrected_label"].notna()
+    print(f"Correcting {is_corrected.sum()} labels")
+    
+    df.loc[is_corrected, "predicted_label"] = df.loc[is_corrected, "Corrected_label"]
+    df = df.drop(columns=["Corrected_label"])
+
+    return df
 
 
 def _read_brain_scans_names(filepath):
@@ -236,6 +262,7 @@ def main():
     df = load_and_parse_labels_df(LABELS_DF_PATH)
     print(f"Loaded labels with {len(df)} number of rows")
 
+    df = apply_corrected_labels(df, CORRECTED_LABELS_PATH)
     df_filtered = exclude_brain_scans(df, BRAIN_TRAIN_PATH, BRAIN_VALID_PATH)
     df_filtered = exclude_invalid_volumes(df_filtered, INVALID_SEGMENTATION_LIST_PATH)
     df_filtered = exclude_invalid_volumes(df_filtered, INVALID_PREPROCESSING_LIST_PATH)
