@@ -3,6 +3,7 @@ Final test-set evaluation for the supervised ResNet baseline.
 """
 
 import json
+import pandas as pd
 
 import torch
 from torch.utils.data import DataLoader
@@ -31,7 +32,15 @@ def main():
     model.load_state_dict(torch.load(CHECKPOINT_PATH, map_location=device))
     model = model.to(device)
 
-    labels, probs = test(model, test_loader, device, USE_AMP)
+    labels, probs, volume_names = test(model, test_loader, device, USE_AMP)
+
+    predictions_df = pd.DataFrame({
+        "volume_name": volume_names,
+        "binary_label": labels,
+        "predicted_prob": probs,
+    })
+
+    predictions_df.to_csv(TEST_PREDICTIONS_PATH, index=False)
 
     roc_plot_path = f"{RESULTS_DIR}/roc_curve.png"
     best_threshold, best_sens, best_spec = plot_roc_curve(labels, probs, roc_plot_path)
