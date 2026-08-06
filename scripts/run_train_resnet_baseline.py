@@ -1,4 +1,5 @@
 import sys
+import os
 
 import torch
 import numpy as np
@@ -12,6 +13,7 @@ from src.ct_anomaly.data.dataset import CTDataset
 from src.ct_anomaly.models.resnet3d_monai import resnet3d
 from src.ct_anomaly.training.resnet_trainer import train
 from src.ct_anomaly.evaluation.experiment_log import save_config_info
+from src.ct_anomaly.training.losses import FocalLoss
 
 
 def main():
@@ -40,6 +42,7 @@ def main():
 
     model = resnet3d(depth=RESNET_DEPTH, num_classes=NUM_CLASSES)
     total_parameters = sum(p.numel() for p in model.parameters())
+    
 
     class_weights_tensor = None
     class_weights_list = None
@@ -49,6 +52,14 @@ def main():
         class_weights = total_samples / (2 * class_counts)
         class_weights_tensor = torch.tensor(class_weights.values, dtype=torch.float32).to(device)
         class_weights_list = class_weights.values.tolist()
+
+    if LOSS_TYPE == "focal":
+        loss_fn = FocalLoss(alpha=class_weights_tensor, gamma=FOCAL_GAMMA)
+    elif LOSS_TYPE == "weighted_ce":
+        loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights_tensor)
+    else:
+        loss_fn = torch.nn.CrossEntropyLoss()
+
 
     config_info = {
         "experiment_name": EXPERIMENT_NAME,
@@ -68,6 +79,10 @@ def main():
         "use_class_weighting": USE_CLASS_WEIGHTING,
         "class_weights": class_weights_list,
         "preprocessed_data_dir": PREPROCESSED_DATA_DIR,
+        "weight_decay": WEIGHT_DECAY,
+        "loss_type": LOSS_TYPE,
+        "focal_gamma": FOCAL_GAMMA if LOSS_TYPE == "focal" else None,
+        "early_stopping_epochs": EARLY_STOPPING_EPOCHS,
     }
 
     print("=" * 60)
@@ -90,7 +105,9 @@ def main():
         metrics_log_path=METRICS_LOG_PATH,
         device=device,
         use_amp=USE_AMP,
-        class_weights_tensor=class_weights_tensor,
+        loss_fn=loss_fn,
+        early_stopping_epochs=EARLY_STOPPING_EPOCHS,
+        weight_decay=WEIGHT_DECAY,
     )
 
     print(f"Training finished. Best val_auroc: {best_val_auroc:.4f}")
