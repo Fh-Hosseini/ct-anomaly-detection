@@ -45,4 +45,4 @@ class CTDataset(Dataset):
         label = int(row["binary_label"])
         label_tensor = torch.tensor(label, dtype=torch.long)
 
-        return volume_tensor, label_tensor
+        return volume_tensor, label_tensor, row["volume_name"]
