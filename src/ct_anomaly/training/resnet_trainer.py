@@ -9,9 +9,11 @@ import json
 import torch
 
 from src.ct_anomaly.evaluation.metrics import compute_all_metrics
+from src.ct_anomaly.data.hu_reclip import reclip_hu
 
+def train_epoch(model, dataloader, optimizer, loss_fn, scaler, device, use_amp,
+    original_hu_range=None, reclip_hu_range=None):
 
-def train_epoch(model, dataloader, optimizer, loss_fn, scaler, device, use_amp):
     model.train()
 
     total_loss = 0.0
@@ -21,6 +23,10 @@ def train_epoch(model, dataloader, optimizer, loss_fn, scaler, device, use_amp):
     for batch_idx, (volumes, labels, _) in enumerate(dataloader):
         volumes = volumes.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
+
+        if reclip_hu_range is not None:
+            volumes = reclip_hu(volumes, original_hu_range[0], original_hu_range[1],
+                reclip_hu_range[0], reclip_hu_range[1])
 
         optimizer.zero_grad()
 
@@ -49,7 +55,9 @@ def train_epoch(model, dataloader, optimizer, loss_fn, scaler, device, use_amp):
     return average_loss
 
 
-def validate_epoch(model, dataloader, loss_fn, device, use_amp):
+def validate_epoch(model, dataloader, loss_fn, device, use_amp,
+    original_hu_range=None, reclip_hu_range=None):
+
     model.eval()
 
     total_loss = 0.0
@@ -60,6 +68,10 @@ def validate_epoch(model, dataloader, loss_fn, device, use_amp):
         for volumes, labels, _ in dataloader:
             volumes = volumes.to(device)
             labels = labels.to(device)
+            
+            if reclip_hu_range is not None:
+                volumes = reclip_hu(volumes, original_hu_range[0], original_hu_range[1],
+                    reclip_hu_range[0], reclip_hu_range[1])
 
             with torch.amp.autocast(device_type="cuda", enabled=use_amp):
                 outputs = model(volumes)
@@ -95,7 +107,8 @@ def _save_resume_checkpoint(resume_checkpoint_path, model, optimizer, scaler, ep
 
 def train(model, train_loader, val_loader, num_epochs, learning_rate, best_checkpoint_path,
     resume_checkpoint_path, done_training_path, metrics_log_path, device, use_amp=True,
-    loss_fn=None, early_stopping_epochs=8, weight_decay=0.0):
+    loss_fn=None, early_stopping_epochs=8, weight_decay=0.0,
+    original_hu_range=None, reclip_hu_range=None):
 
     os.makedirs(os.path.dirname(best_checkpoint_path), exist_ok=True)
     model = model.to(device)
