@@ -27,7 +27,9 @@ LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-4
 USE_AMP = True
 USE_CLASS_WEIGHTING = True
-EARLY_STOPPING_EPOCHS = 8
+EARLY_STOPPING_EPOCHS = 5
+
+RECLIP_HU_MAX = 400  # None: to disable reclipping
 
 LOSS_TYPE = "weighted_ce"   # ce, weighted_ce, focal
 FOCAL_GAMMA = 2.0
@@ -57,9 +59,12 @@ def _get_experiment_name():
     #     f"{next_index:03d}_resnet{RESNET_DEPTH}_"
     #     f"prep{PREPROCESSING_CONFIG}_b{BATCH_SIZE}_e{NUM_EPOCHS}_Lr{LEARNING_RATE}"
     # )
+    reclip_suffix = f"_reclip{RECLIP_HU_MAX}" if RECLIP_HU_MAX else ""
+
     name = (
         f"{next_index:03d}_resnet{RESNET_DEPTH}_"
-        f"prep{PREPROCESSING_CONFIG}_b{BATCH_SIZE}_e{NUM_EPOCHS}_Lr{LEARNING_RATE}_wd{WEIGHT_DECAY}_{LOSS_TYPE}"
+        f"prep{PREPROCESSING_CONFIG}_b{BATCH_SIZE}_e{NUM_EPOCHS}_Lr{LEARNING_RATE}"
+        f"_wd{WEIGHT_DECAY}_{LOSS_TYPE}{reclip_suffix}"
     )
 
     os.makedirs("results", exist_ok=True)
