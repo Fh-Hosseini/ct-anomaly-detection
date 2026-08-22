@@ -6,7 +6,8 @@ import numpy as np
 import random
 from torch.utils.data import DataLoader
 
-torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 from configs.resnet_baseline_config import *
 from src.ct_anomaly.data.dataset import CTDataset
@@ -25,10 +26,15 @@ def main():
 
 
     torch.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
     np.random.seed(SEED)
     random.seed(SEED)
 
+    original_range = (CONFIGS[PREPROCESSING_CONFIG]["hu_min"], CONFIGS[PREPROCESSING_CONFIG]["hu_max"])
+    reclip_range = (CONFIGS[PREPROCESSING_CONFIG]["hu_min"], RECLIP_HU_MAX) if RECLIP_HU_MAX else None
+
     train_dataset = CTDataset(LABELS_CSV_PATH, PREPROCESSED_DATA_DIR, split="train")
+
     val_dataset = CTDataset(LABELS_CSV_PATH, PREPROCESSED_DATA_DIR, split="val")
 
     train_loader = DataLoader(
@@ -83,6 +89,7 @@ def main():
         "loss_type": LOSS_TYPE,
         "focal_gamma": FOCAL_GAMMA if LOSS_TYPE == "focal" else None,
         "early_stopping_epochs": EARLY_STOPPING_EPOCHS,
+        "reclip_hu_max": RECLIP_HU_MAX,
     }
 
     print("=" * 60)
@@ -108,6 +115,8 @@ def main():
         loss_fn=loss_fn,
         early_stopping_epochs=EARLY_STOPPING_EPOCHS,
         weight_decay=WEIGHT_DECAY,
+        original_hu_range=original_range,
+        reclip_hu_range=reclip_range,
     )
 
     print(f"Training finished. Best val_auroc: {best_val_auroc:.4f}")
