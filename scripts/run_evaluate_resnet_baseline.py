@@ -16,8 +16,14 @@ from src.ct_anomaly.evaluation.metrics import compute_all_metrics
 from src.ct_anomaly.evaluation.experiment_log import log_experiment_summary
 from src.ct_anomaly.evaluation.plot_roc import plot_roc_curve
 
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    original_range = (CONFIGS[PREPROCESSING_CONFIG]["hu_min"], CONFIGS[PREPROCESSING_CONFIG]["hu_max"])
+    reclip_range = (CONFIGS[PREPROCESSING_CONFIG]["hu_min"], RECLIP_HU_MAX) if RECLIP_HU_MAX else None
 
     test_dataset = CTDataset(LABELS_CSV_PATH, PREPROCESSED_DATA_DIR, split="test")
     test_loader = DataLoader(
@@ -32,7 +38,9 @@ def main():
     model.load_state_dict(torch.load(CHECKPOINT_PATH, map_location=device))
     model = model.to(device)
 
-    labels, probs, volume_names = test(model, test_loader, device, USE_AMP)
+    print(f"DEBUG: original_range={original_range}, reclip_range={reclip_range}")
+    labels, probs, volume_names = test(model, test_loader, device, USE_AMP,
+        original_hu_range=original_range, reclip_hu_range=reclip_range)
 
     predictions_df = pd.DataFrame({
         "volume_name": volume_names,
