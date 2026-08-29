@@ -20,7 +20,12 @@ def train_epoch(model, dataloader, optimizer, loss_fn, scaler, device, use_amp,
     num_batches = len(dataloader)
     epoch_start_time = time.time()
 
-    for batch_idx, (volumes, labels, _) in enumerate(dataloader):
+    for batch_idx, (volumes, labels, volume_names) in enumerate(dataloader):
+
+        if batch_idx <= 3:
+            print(f"DEBUG first batch volume names: {list(volume_names)}")
+
+
         volumes = volumes.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
 
@@ -148,8 +153,11 @@ def train(model, train_loader, val_loader, num_epochs, learning_rate, best_check
         print(f"\nEpoch {epoch + 1}/{num_epochs} is starting:")
         epoch_start_time = time.time()
 
-        train_loss = train_epoch(model, train_loader, optimizer, loss_fn, scaler, device, use_amp)
-        val_loss, val_metrics = validate_epoch(model, val_loader, loss_fn, device, use_amp)
+        train_loss = train_epoch(model, train_loader, optimizer, loss_fn, scaler, device, use_amp,
+            original_hu_range=original_hu_range, reclip_hu_range=reclip_hu_range)
+        val_loss, val_metrics = validate_epoch(model, val_loader, loss_fn, device, use_amp,
+            original_hu_range=original_hu_range, reclip_hu_range=reclip_hu_range)
+
         val_auroc = val_metrics["auroc"]
 
         epoch_duration_minutes = (time.time() - epoch_start_time) / 60
