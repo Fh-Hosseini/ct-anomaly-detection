@@ -57,6 +57,12 @@ def specificity_at_sensitivity(labels, probs, target_sensitivity=0.95):
     return specificity
 
 
+def specificity_at_threshold(labels, probs, threshold):
+    predictions = _predictions_at_threshold(probs, threshold)
+    tn, fp, fn, tp = confusion_matrix(labels, predictions).ravel()
+    return tn / (tn + fp) if (tn + fp) > 0 else 0.0
+    
+
 def _predictions_at_threshold(probs, threshold):
     return (np.array(probs) >= threshold).astype(int)
 
