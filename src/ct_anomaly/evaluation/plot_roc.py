@@ -1,15 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, roc_auc_score
-
-
-def find_best_threshold_youden(labels, probs):
-    """
-    sensitivity + specificity - 1, maximized over all thresholds
-    """
-    fp_rate, tp_rate, thresholds = roc_curve(labels, probs)
-    best_index = np.argmax(tp_rate - fp_rate)
-    return thresholds[best_index], tp_rate[best_index], 1 - fp_rate[best_index]
+from src.ct_anomaly.evaluation.thresholds import find_best_threshold_youden
 
 
 def plot_roc_curve(labels, probs, save_path, default_threshold=0.5):
@@ -44,3 +36,28 @@ def plot_roc_curve(labels, probs, save_path, default_threshold=0.5):
     plt.close()
 
     return best_threshold, best_sensitivity, best_specificity
+
+
+def plot_roc_curve_multi(labels, probs, save_path, points_dict):
+    fp_rate, tp_rate, thresholds = roc_curve(labels, probs)
+    auc_value = roc_auc_score(labels, probs)
+
+    plt.figure(figsize=(8, 8))
+    plt.plot(fp_rate, tp_rate, label=f"ROC curve (AUROC = {auc_value:.3f})")
+    plt.plot([0, 1], [0, 1], linestyle="--", color="gray", label="Random guess")
+
+    colors = ["red", "blue", "green", "purple", "orange"]
+    for (name, threshold), color in zip(points_dict.items(), colors):
+        idx = np.argmin(np.abs(thresholds - threshold))
+        plt.scatter(
+            fp_rate[idx], tp_rate[idx], color=color, zorder=5,
+            label=f"{name} (thr={threshold:.3f})\nsens={tp_rate[idx]:.3f}, spec={1 - fp_rate[idx]:.3f}",
+        )
+
+    plt.xlabel("1 - Specificity (False Positive Rate)")
+    plt.ylabel("Sensitivity (True Positive Rate)")
+    plt.title("ROC Curve with Operating Points")
+    plt.legend(loc="lower right", fontsize=8)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150)
+    plt.close()
