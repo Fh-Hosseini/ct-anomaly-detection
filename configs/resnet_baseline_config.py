@@ -6,10 +6,19 @@ import os
 import json
 import glob
 from datetime import datetime
+import fcntl
 
 from configs.preprocessing_configs import CONFIGS
 
-PREPROCESSING_CONFIG = "config1"
+# PREPROCESSING_CONFIG = "config1"
+
+
+PREPROCESSING_CONFIG = os.environ.get("PREPROCESSING_CONFIG", "config1")
+
+# RECLIP_HU_MAX = 400  # None: to disable reclipping
+
+_reclip_env = os.environ.get("RECLIP_HU_MAX")
+RECLIP_HU_MAX = int(_reclip_env) if _reclip_env else None
 
 LABELS_CSV_PATH = "data/processed/labels_cleaned_with_split.csv"
 
@@ -29,7 +38,7 @@ USE_AMP = True
 USE_CLASS_WEIGHTING = True
 EARLY_STOPPING_EPOCHS = 5
 
-RECLIP_HU_MAX = 400  # None: to disable reclipping
+
 
 LOSS_TYPE = "weighted_ce"   # ce, weighted_ce, focal
 FOCAL_GAMMA = 2.0
@@ -42,38 +51,35 @@ RUN_STATE_PATH = "results/.run_state.json"
 
 
 def _get_experiment_name():
+    override = os.environ.get("EXPERIMENT_NAME_OVERRIDE")
+    if override:
+        return override
+
     is_new_run = os.environ.get("NEW_RUN") == "1"
-    state_exists = os.path.exists(RUN_STATE_PATH)
-
-    if state_exists and not is_new_run:
-        with open(RUN_STATE_PATH) as f:
-            return json.load(f)["experiment_name"]
-
-    current_index = 0
-    if state_exists:
-        with open(RUN_STATE_PATH) as f:
-            current_index = json.load(f).get("index", 0)
-    next_index = current_index + 1
-
-    # name = (
-    #     f"{next_index:03d}_resnet{RESNET_DEPTH}_"
-    #     f"prep{PREPROCESSING_CONFIG}_b{BATCH_SIZE}_e{NUM_EPOCHS}_Lr{LEARNING_RATE}"
-    # )
-    reclip_suffix = f"_reclip{RECLIP_HU_MAX}" if RECLIP_HU_MAX else ""
-
-    name = (
-        f"{next_index:03d}_resnet{RESNET_DEPTH}_"
-        f"prep{PREPROCESSING_CONFIG}_b{BATCH_SIZE}_e{NUM_EPOCHS}_Lr{LEARNING_RATE}"
-        f"_wd{WEIGHT_DECAY}_{LOSS_TYPE}{reclip_suffix}"
-    )
-
     os.makedirs("results", exist_ok=True)
-    with open(RUN_STATE_PATH, "w") as f:
-        json.dump({"index": next_index, "experiment_name": name}, f)
+    lock_path = "results/.run_state.lock"
+    with open(lock_path, "w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        state_exists = os.path.exists(RUN_STATE_PATH)
+        if state_exists and not is_new_run:
+            with open(RUN_STATE_PATH) as f:
+                return json.load(f)["experiment_name"]
+        current_index = 0
+        if state_exists:
+            with open(RUN_STATE_PATH) as f:
+                current_index = json.load(f).get("index", 0)
+        next_index = current_index + 1
+        reclip_suffix = f"_reclip{RECLIP_HU_MAX}" if RECLIP_HU_MAX else ""
+        name = (
+            f"{next_index:03d}_resnet{RESNET_DEPTH}_"
+            f"prep{PREPROCESSING_CONFIG}_b{BATCH_SIZE}_e{NUM_EPOCHS}_Lr{LEARNING_RATE}"
+            f"_wd{WEIGHT_DECAY}_{LOSS_TYPE}{reclip_suffix}"
+        )
+        with open(RUN_STATE_PATH, "w") as f:
+            json.dump({"index": next_index, "experiment_name": name}, f)
+        return name
 
-    return name
-
-
+        
 EXPERIMENT_NAME = _get_experiment_name()
 RUN_DATE = datetime.now().strftime("%Y%m%d")
 
