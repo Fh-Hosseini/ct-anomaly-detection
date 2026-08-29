@@ -8,6 +8,8 @@ from torch.utils.data import DataLoader
 
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
+torch.use_deterministic_algorithms(True, warn_only=True)
+
 
 from configs.resnet_baseline_config import *
 from src.ct_anomaly.data.dataset import CTDataset
@@ -37,9 +39,12 @@ def main():
 
     val_dataset = CTDataset(LABELS_CSV_PATH, PREPROCESSED_DATA_DIR, split="val")
 
+    data_generator = torch.Generator()
+    data_generator.manual_seed(SEED)
+
     train_loader = DataLoader(
         train_dataset, batch_size=BATCH_SIZE, shuffle=True,
-        num_workers=NUM_WORKERS, pin_memory=True,
+        num_workers=NUM_WORKERS, pin_memory=True, generator=data_generator
     )
     val_loader = DataLoader(
         val_dataset, batch_size=BATCH_SIZE, shuffle=False,
