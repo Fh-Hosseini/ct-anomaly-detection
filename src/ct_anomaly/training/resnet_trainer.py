@@ -9,10 +9,20 @@ import json
 import torch
 
 from src.ct_anomaly.evaluation.metrics import compute_all_metrics
-from src.ct_anomaly.data.hu_reclip import reclip_hu
+from src.ct_anomaly.data.prepare_data import prepare_volumes
 
-def train_epoch(model, dataloader, optimizer, loss_fn, scaler, device, use_amp,
-    original_hu_range=None, reclip_hu_range=None):
+
+def train_epoch(
+    model,
+    dataloader,
+    optimizer,
+    loss_fn,
+    scaler,
+    device,
+    use_amp,
+    original_hu_range=None,
+    reclip_hu_range=None,
+):
 
     model.train()
 
@@ -21,17 +31,12 @@ def train_epoch(model, dataloader, optimizer, loss_fn, scaler, device, use_amp,
     epoch_start_time = time.time()
 
     for batch_idx, (volumes, labels, volume_names) in enumerate(dataloader):
-
-        if batch_idx <= 3:
-            print(f"DEBUG first batch volume names: {list(volume_names)}")
-
-
         volumes = volumes.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
 
-        if reclip_hu_range is not None:
-            volumes = reclip_hu(volumes, original_hu_range[0], original_hu_range[1],
-                reclip_hu_range[0], reclip_hu_range[1])
+        volumes = prepare_volumes(
+            volumes, original_hu_range, reclip_hu_range, target_shape=None
+        )
 
         optimizer.zero_grad()
 
@@ -60,8 +65,15 @@ def train_epoch(model, dataloader, optimizer, loss_fn, scaler, device, use_amp,
     return average_loss
 
 
-def validate_epoch(model, dataloader, loss_fn, device, use_amp,
-    original_hu_range=None, reclip_hu_range=None):
+def validate_epoch(
+    model,
+    dataloader,
+    loss_fn,
+    device,
+    use_amp,
+    original_hu_range=None,
+    reclip_hu_range=None,
+):
 
     model.eval()
 
@@ -73,10 +85,10 @@ def validate_epoch(model, dataloader, loss_fn, device, use_amp,
         for volumes, labels, _ in dataloader:
             volumes = volumes.to(device)
             labels = labels.to(device)
-            
-            if reclip_hu_range is not None:
-                volumes = reclip_hu(volumes, original_hu_range[0], original_hu_range[1],
-                    reclip_hu_range[0], reclip_hu_range[1])
+
+            volumes = prepare_volumes(
+                volumes, original_hu_range, reclip_hu_range, target_shape=None
+            )
 
             with torch.amp.autocast(device_type="cuda", enabled=use_amp):
                 outputs = model(volumes)
@@ -96,7 +108,15 @@ def validate_epoch(model, dataloader, loss_fn, device, use_amp,
     return average_loss, metrics
 
 
-def _save_resume_checkpoint(resume_checkpoint_path, model, optimizer, scaler, epoch, best_val_auroc, epochs_without_improvement):
+def _save_resume_checkpoint(
+    resume_checkpoint_path,
+    model,
+    optimizer,
+    scaler,
+    epoch,
+    best_val_auroc,
+    epochs_without_improvement,
+):
     torch.save(
         {
             "epoch": epoch,
@@ -110,20 +130,35 @@ def _save_resume_checkpoint(resume_checkpoint_path, model, optimizer, scaler, ep
     )
 
 
-def train(model, train_loader, val_loader, num_epochs, learning_rate, best_checkpoint_path,
-    resume_checkpoint_path, done_training_path, metrics_log_path, device, use_amp=True,
-    loss_fn=None, early_stopping_epochs=8, weight_decay=0.0,
-    original_hu_range=None, reclip_hu_range=None):
+def train(
+    model,
+    train_loader,
+    val_loader,
+    num_epochs,
+    learning_rate,
+    best_checkpoint_path,
+    resume_checkpoint_path,
+    done_training_path,
+    metrics_log_path,
+    device,
+    use_amp=True,
+    loss_fn=None,
+    early_stopping_epochs=8,
+    weight_decay=0.0,
+    original_hu_range=None,
+    reclip_hu_range=None,
+):
 
     os.makedirs(os.path.dirname(best_checkpoint_path), exist_ok=True)
     model = model.to(device)
 
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=learning_rate, weight_decay=weight_decay
+    )
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    
     if loss_fn is None:
         loss_fn = torch.nn.CrossEntropyLoss()
-        
+
     scaler = torch.amp.GradScaler(device="cuda", enabled=use_amp)
 
     start_epoch = 0
@@ -133,30 +168,51 @@ def train(model, train_loader, val_loader, num_epochs, learning_rate, best_check
     if os.path.exists(done_training_path):
         with open(done_training_path) as f:
             done_training_info = json.load(f)
-        print(f"Training already completed. Best val_auroc: {done_training_info['best_val_auroc']:.4f}")
+        print(
+            f"Training already completed. Best val_auroc: {done_training_info['best_val_auroc']:.4f}"
+        )
         return done_training_info["best_val_auroc"]
 
     epochs_without_improvement = 0
     # If a resume checkpoint exists, resume from that point.
     if os.path.exists(resume_checkpoint_path):
-        checkpoint = torch.load(resume_checkpoint_path, map_location=device)
+        checkpoint = torch.load(
+            resume_checkpoint_path, map_location=device, weights_only=False
+        )
         model.load_state_dict(checkpoint["model_state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         scaler.load_state_dict(checkpoint["scaler_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
         best_val_auroc = checkpoint["best_val_auroc"]
         epochs_without_improvement = checkpoint.get("epochs_without_improvement", 0)
-        print(f"Resuming from epoch {start_epoch} (best_val_auroc: {best_val_auroc:.4f})")
-
+        print(
+            f"Resuming from epoch {start_epoch} (best_val_auroc: {best_val_auroc:.4f})"
+        )
 
     for epoch in range(start_epoch, num_epochs):
         print(f"\nEpoch {epoch + 1}/{num_epochs} is starting:")
         epoch_start_time = time.time()
 
-        train_loss = train_epoch(model, train_loader, optimizer, loss_fn, scaler, device, use_amp,
-            original_hu_range=original_hu_range, reclip_hu_range=reclip_hu_range)
-        val_loss, val_metrics = validate_epoch(model, val_loader, loss_fn, device, use_amp,
-            original_hu_range=original_hu_range, reclip_hu_range=reclip_hu_range)
+        train_loss = train_epoch(
+            model,
+            train_loader,
+            optimizer,
+            loss_fn,
+            scaler,
+            device,
+            use_amp,
+            original_hu_range=original_hu_range,
+            reclip_hu_range=reclip_hu_range,
+        )
+        val_loss, val_metrics = validate_epoch(
+            model,
+            val_loader,
+            loss_fn,
+            device,
+            use_amp,
+            original_hu_range=original_hu_range,
+            reclip_hu_range=reclip_hu_range,
+        )
 
         val_auroc = val_metrics["auroc"]
 
@@ -174,7 +230,11 @@ def train(model, train_loader, val_loader, num_epochs, learning_rate, best_check
         for metric_name, value in val_metrics.items():
             print(f"    {metric_name}: {value:.4f}")
 
-        metrics_log = {"epoch": epoch + 1, "train_loss": train_loss, "val_loss": val_loss}
+        metrics_log = {
+            "epoch": epoch + 1,
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+        }
         metrics_log.update(val_metrics)
         with open(metrics_log_path, "a") as f:
             f.write(json.dumps(metrics_log) + "\n")
@@ -189,7 +249,13 @@ def train(model, train_loader, val_loader, num_epochs, learning_rate, best_check
             print(f"  No improvement for {epochs_without_improvement} epoch(s)")
 
         _save_resume_checkpoint(
-            resume_checkpoint_path, model, optimizer, scaler, epoch, best_val_auroc, epochs_without_improvement
+            resume_checkpoint_path,
+            model,
+            optimizer,
+            scaler,
+            epoch,
+            best_val_auroc,
+            epochs_without_improvement,
         )
 
         print("#" * 100)
@@ -197,7 +263,6 @@ def train(model, train_loader, val_loader, num_epochs, learning_rate, best_check
         if epochs_without_improvement >= early_stopping_epochs:
             print(f"Early stopping: no improvement for {early_stopping_epochs} epochs.")
             break
-
 
     with open(done_training_path, "w") as f:
         json.dump({"best_val_auroc": best_val_auroc}, f)

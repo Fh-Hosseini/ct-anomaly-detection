@@ -13,7 +13,7 @@ from configs.preprocessing_configs import CONFIGS
 # PREPROCESSING_CONFIG = "config1"
 
 
-PREPROCESSING_CONFIG = os.environ.get("PREPROCESSING_CONFIG", "config1")
+PREPROCESSING_CONFIG = os.environ.get("PREPROCESSING_CONFIG", "config3")
 
 # RECLIP_HU_MAX = 400  # None: to disable reclipping
 
@@ -25,7 +25,7 @@ LABELS_CSV_PATH = "data/processed/labels_cleaned_with_split.csv"
 PREPROCESSED_ROOT = "/anvme/workspace/iwi5437h-ct-anomaly-detection/preprocessed"
 PREPROCESSED_DATA_DIR = f"{PREPROCESSED_ROOT}/{CONFIGS[PREPROCESSING_CONFIG]['name']}"
 
-SEED = 42
+SEED = int(os.environ.get("SEED", 42))
 
 BATCH_SIZE = 10
 NUM_WORKERS = 14
@@ -40,8 +40,7 @@ EARLY_STOPPING_EPOCHS = 5
 
 
 
-LOSS_TYPE = "weighted_ce"   # ce, weighted_ce, focal
-FOCAL_GAMMA = 2.0
+LOSS_TYPE = "weighted_ce"   # ce, weighted_ce
 
 RESNET_DEPTH = 18
 NUM_CLASSES = 2  # healthy, abnormal
@@ -73,7 +72,7 @@ def _get_experiment_name():
         name = (
             f"{next_index:03d}_resnet{RESNET_DEPTH}_"
             f"prep{PREPROCESSING_CONFIG}_b{BATCH_SIZE}_e{NUM_EPOCHS}_Lr{LEARNING_RATE}"
-            f"_wd{WEIGHT_DECAY}_{LOSS_TYPE}{reclip_suffix}"
+            f"_wd{WEIGHT_DECAY}_{LOSS_TYPE}{reclip_suffix}_s{SEED}"
         )
         with open(RUN_STATE_PATH, "w") as f:
             json.dump({"index": next_index, "experiment_name": name}, f)
