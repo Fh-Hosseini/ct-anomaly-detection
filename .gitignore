@@ -9,4 +9,5 @@ data/processed/lung_masks/
 data/processed/preprocessed/
 *.png
 output.png
-Paths_codes.txt
+Paths_codes.txt.ruff_cache/
+*.bak
