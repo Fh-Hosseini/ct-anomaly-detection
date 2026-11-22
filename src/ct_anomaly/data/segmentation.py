@@ -9,6 +9,8 @@ Includes Functions to:
 
 import os
 import tempfile
+from pathlib import Path
+
 import numpy as np
 import nibabel as nib
 from totalsegmentator.python_api import totalsegmentator
@@ -35,6 +37,7 @@ def segment_one_volume(volume_path, mask_dir, device="gpu"):
     """
 
     tempfile.tempdir = os.environ.get("TMPDIR", "/tmp")
+    mask_dir = Path(mask_dir)
     mask_dir.mkdir(parents=True, exist_ok=True)
 
     nii = nib.load(volume_path)
@@ -59,6 +62,7 @@ def combine_lung_lobes_masks(mask_dir):
         combined_mask: Binary numpy array where 1 indicates lung and 0 indicates background
     """
 
+    mask_dir = Path(mask_dir)
     combined_mask = None
 
     for lobe in LUNG_LOBES:
@@ -76,7 +80,7 @@ def combine_lung_lobes_masks(mask_dir):
 def get_bounding_box(lung_mask):
     """
     Get the bounding box coordinates of the lung region from a binary lung mask.
-    
+
     Args:
         lung_mask: Binary numpy array where 1 indicates lung and 0 indicates background
 
@@ -87,6 +91,8 @@ def get_bounding_box(lung_mask):
 
     # Find the indices of the lung voxels
     lung_voxel_indices = np.argwhere(lung_mask > 0)
+    if lung_voxel_indices.size == 0:
+        raise ValueError("lung mask is empty, segmentation produced no lung voxels")
 
     bbox_indices = {
         "x_min": int(lung_voxel_indices[:, 0].min()),

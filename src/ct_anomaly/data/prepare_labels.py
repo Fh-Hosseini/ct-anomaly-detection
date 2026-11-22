@@ -8,7 +8,7 @@ This script is used to prepare and clean the labels df for the CT anomaly detect
 3. Exclude invalid volumes from the dataframe based on the provided list of invalid volume names.
 4. Create binary labels: 0 for healthy scans and 1 for unhealthy scans by combining borderline and unhealthy labels.
 5. Add two new columns to the dataframe: "volume_data_path" and "mask_dir" which contain the paths to the CT volume data and the lung mask directory.
-6. Save the cleaned and processed dataframe to a CSV file.      
+6. Save the cleaned and processed dataframe to a CSV file.
 
 """
 
@@ -16,14 +16,18 @@ import pandas as pd
 from pathlib import Path
 
 # Paths
-PROJECT_ROOT = Path("/home/hpc/iwi5/iwi5437h/ct-anomaly-detection")
+# PROJECT_ROOT = Path("/home/hpc/iwi5/iwi5437h/ct-anomaly-detection")
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 CT_DATA_ROOT = Path("/anvme/workspace/b180dc29-CT_RATE_IDEA_MIRROR")
 MASKS_ROOT = Path("/anvme/workspace/iwi5437h-ct-anomaly-detection/lung_masks")
 
 BRAIN_TRAIN_PATH = PROJECT_ROOT / "data/raw/no_chest_train.txt"
 BRAIN_VALID_PATH = PROJECT_ROOT / "data/raw/no_chest_valid.txt"
 INVALID_SEGMENTATION_LIST_PATH = PROJECT_ROOT / "data/processed/seg_invalid_volumes.csv"
-INVALID_PREPROCESSING_LIST_PATH = PROJECT_ROOT / "data/processed/preprocess_invalid_volumes.csv"
+INVALID_PREPROCESSING_LIST_PATH = (
+    PROJECT_ROOT / "data/processed/preprocess_invalid_volumes.csv"
+)
 
 LABELS_DF_PATH = PROJECT_ROOT / "data/raw/CT-RATE_reports_full_gpt-oss-120b.xlsx"
 CORRECTED_LABELS_PATH = PROJECT_ROOT / "data/processed/mixed_label_scans_corrected.csv"
@@ -45,17 +49,20 @@ def parse_volume_name(volume_name):
 
     str_parts = volume_name.replace(".nii.gz", "").split("_")
 
-    if len(str_parts) == 4:
-        volume_metadata["patient_id"] = str_parts[0] + "_" + str_parts[1]
-        volume_metadata["scan_id"] = str_parts[2]
-        volume_metadata["reconstruction"] = int(str_parts[3])
-
+    if len(str_parts) != 4:
+        raise ValueError(
+            f"volume_name {volume_name!r} does not have the expected "
+            f"patient_scan_reconstruction form"
+        )
+    volume_metadata["patient_id"] = str_parts[0] + "_" + str_parts[1]
+    volume_metadata["scan_id"] = str_parts[2]
+    volume_metadata["reconstruction"] = int(str_parts[3])
     return volume_metadata
 
 
 def load_and_parse_labels_df(filepath):
     """
-    Load raw label Excel file, drop empty columns, parse VolumeName into 
+    Load raw label Excel file, drop empty columns, parse VolumeName into
     patient_id, scan_id, and reconstruction.
 
     Args:
@@ -71,12 +78,14 @@ def load_and_parse_labels_df(filepath):
     df = df[["Predicted_label", "VolumeName", "Findings_EN", "Impressions_EN"]].copy()
 
     # Rename columns to snake_case
-    df = df.rename(columns={
-    "Predicted_label": "predicted_label",
-    "VolumeName": "volume_name",
-    "Findings_EN": "findings_en",
-    "Impressions_EN": "impressions_en",
-})
+    df = df.rename(
+        columns={
+            "Predicted_label": "predicted_label",
+            "VolumeName": "volume_name",
+            "Findings_EN": "findings_en",
+            "Impressions_EN": "impressions_en",
+        }
+    )
 
     # parse volume_name: patient_id, scan_id, reconstruction
     df_volume_data = df["volume_name"].apply(parse_volume_name).apply(pd.Series)
@@ -96,14 +105,14 @@ def apply_corrected_labels(df, corrected_labels_path):
     """
 
     corrected_df = pd.read_csv(corrected_labels_path, sep=";")
-    
+
     corrected_df = corrected_df[["VolumeName", "Corrected_label"]].copy()
     corrected_df = corrected_df.rename(columns={"VolumeName": "volume_name"})
 
     df = df.merge(corrected_df, on="volume_name", how="left")
     is_corrected = df["Corrected_label"].notna()
     print(f"Correcting {is_corrected.sum()} labels")
-    
+
     df.loc[is_corrected, "predicted_label"] = df.loc[is_corrected, "Corrected_label"]
     df = df.drop(columns=["Corrected_label"])
 
@@ -166,8 +175,8 @@ def exclude_invalid_volumes(df, invalid_list_path):
 
     Args:
         df: The dataframe containing information about all volumes and their labels.
-        invalid_list_path: The path to the CSV file containing the list of invalid volume names. 
-    
+        invalid_list_path: The path to the CSV file containing the list of invalid volume names.
+
     Returns:
         df_filtered: A filtered dataframe that excludes the invalid volumes.
     """
@@ -175,10 +184,16 @@ def exclude_invalid_volumes(df, invalid_list_path):
     invalid_vol_df = pd.read_csv(invalid_list_path)
     invalid_volumes = set(invalid_vol_df["volume_name"].tolist())
 
-    invalid_mask = df["volume_name"].str.replace(".nii.gz", "").isin(invalid_volumes)
+    invalid_mask = (
+        df["volume_name"].str.replace(".nii.gz", "", regex=False).isin(invalid_volumes)
+    )
+
     df_filtered = df[~invalid_mask].copy()
 
-    print(f"Removed {len(invalid_volumes)} invalid volumes")
+    print(
+        f"Removed {len(df) - len(df_filtered)} volumes "
+        f"from a list of {len(invalid_volumes)}"
+    )
 
     return df_filtered
 
@@ -186,13 +201,12 @@ def exclude_invalid_volumes(df, invalid_list_path):
 def create_binary_labels(df):
     """
     Create binary labels: 0 for healthy scans and 1 for unhealthy scans by combining borderline and unhealthy labels.
-    As all the reconstructions of a scan should have the same label, we assign the maximum label for all reconstructions of the same scan.
+    Raises if any scan has reconstructions carrying different labels, since the corrected labels file is expected to resolve those.
 
     Args:
-        df: The metadata dataframe containing information about all volumes, including the original predicted labels. 
+        df: The metadata dataframe containing information about all volumes, including the original predicted labels.
 
     Returns:
-        scan_df: A dataframe at the scan level containing the binary labels and the number of volumes per scan. 
         df: The original dataframe with an additional column for binary labels at the volume level.
     """
 
@@ -200,11 +214,14 @@ def create_binary_labels(df):
     df = df.copy()
     df["binary_label"] = df["predicted_label"].apply(lambda x: 0 if x == 0 else 1)
 
-    # TODO MAYBE UNCOMMENT THIS
-    # assign the maximum label for all reconstructions of the same scan
-    # scan_max_label = df.groupby(["patient_id", "scan_id"])["binary_label"].transform("max")
-    # df["binary_label"] = scan_max_label
-
+    labels_per_scan = df.groupby(["patient_id", "scan_id"])["binary_label"].nunique()
+    mixed_scans = labels_per_scan[labels_per_scan > 1]
+    if len(mixed_scans) > 0:
+        raise ValueError(
+            f"{len(mixed_scans)} scans have reconstructions with different labels, "
+            f"add them to the corrected labels file. First few: "
+            f"{list(mixed_scans.index[:5])}"
+        )
     return df
 
 
@@ -212,7 +229,7 @@ def get_volume_data_path(volume_name, patient_id, scan_id):
     """
     Find volume path using the volume information: volume_name, patient_id, scan_id.
 
-    Args: 
+    Args:
         volume_name: name of the volume
         patient_id: id of the patient
         scan_id: id of the scan
@@ -222,8 +239,14 @@ def get_volume_data_path(volume_name, patient_id, scan_id):
     """
 
     # the split here is either "train", "val" and it is from the data split of CT Rate dataset itself, not the split used for training in our project.
-    split = patient_id.split("_")[0] 
-    data_path = CT_DATA_ROOT / f"CT-RATE_{split}_fixed" / patient_id / f"{patient_id}_{scan_id}" / f"{volume_name}.nii.gz"
+    split = patient_id.split("_")[0]
+    data_path = (
+        CT_DATA_ROOT
+        / f"CT-RATE_{split}_fixed"
+        / patient_id
+        / f"{patient_id}_{scan_id}"
+        / f"{volume_name}.nii.gz"
+    )
 
     return data_path
 
@@ -242,11 +265,14 @@ def add_path_columns(df):
 
     # add a column for the ct volume data path
     df["volume_data_path"] = df.apply(
-        lambda row: str(get_volume_data_path(
-            row["volume_name"].replace(".nii.gz", ""),
-            row["patient_id"],
-            row["scan_id"]
-        )), axis=1
+        lambda row: str(
+            get_volume_data_path(
+                row["volume_name"].replace(".nii.gz", ""),
+                row["patient_id"],
+                row["scan_id"],
+            )
+        ),
+        axis=1,
     )
 
     # add a column for the lung mask directory path
@@ -275,7 +301,6 @@ def main():
     print("\nFirst rows of processed df: ")
     print(df_final.head())
 
-
     PROCESSED_LABELS_PATH.parent.mkdir(parents=True, exist_ok=True)
     df_final.to_csv(PROCESSED_LABELS_PATH, index=False)
     print(f"\nSaved cleaned labels df to {PROCESSED_LABELS_PATH}")
@@ -283,7 +308,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
