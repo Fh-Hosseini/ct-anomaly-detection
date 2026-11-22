@@ -11,17 +11,14 @@ from torch.utils.data import DataLoader
 
 from configs.resnet_baseline_config import *
 from src.ct_anomaly.data.dataset import CTDataset
-from src.ct_anomaly.models.resnet3d_monai import resnet3d
-from src.ct_anomaly.evaluation.evaluate import test
+from src.ct_anomaly.models.resnet3d import resnet3d
+from src.ct_anomaly.evaluation.evaluate_resnet import test
 from src.ct_anomaly.evaluation.metrics import compute_all_metrics
-from src.ct_anomaly.evaluation.experiment_log import log_experiment_summary
+from src.ct_anomaly.utils.experiment_log import log_experiment_summary
 
 from src.ct_anomaly.evaluation.plot_roc import plot_roc_curve, plot_roc_curve_multi
-from src.ct_anomaly.evaluation.metrics import specificity_at_sensitivity, specificity_at_threshold
 from src.ct_anomaly.evaluation.thresholds import *
 
-import numpy as np
-from sklearn.metrics import roc_curve
 
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
@@ -75,7 +72,7 @@ def main():
     chosen_threshold, val_sens, val_spec = find_best_threshold_youden(val_labels, val_probs)
     print(f"Threshold chosen on VALIDATION: {chosen_threshold:.3f} (val sensitivity={val_sens:.3f}, val specificity={val_spec:.3f})")
 
-    
+
     thresholds = {
         "youden": find_best_threshold_youden(val_labels, val_probs)[0],
         "sens90": find_threshold_for_sensitivity(val_labels, val_probs, 0.90),
@@ -95,7 +92,7 @@ def main():
         "binary_label": labels,
         "predicted_prob": probs,
     })
-    
+
     predictions_df.to_csv(test_predictions_path, index=False)
 
     roc_plot_path = f"{results_dir}/roc_curve.png"
@@ -138,5 +135,5 @@ def main():
     log_experiment_summary(PROJECT_SUMMARY_PATH, summary_row)
     print(f"Added summary to {PROJECT_SUMMARY_PATH}")
 
-if __name__ == "__main__":  
+if __name__ == "__main__":
     main()

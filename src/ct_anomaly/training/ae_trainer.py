@@ -4,21 +4,12 @@ import json
 
 import torch
 
-from src.ct_anomaly.evaluation.metrics import compute_all_metrics
+from src.ct_anomaly.evaluation.metrics import compute_threshold_free_metrics
 from src.ct_anomaly.evaluation.voxel_score import compute_voxel_scores
 from src.ct_anomaly.data.prepare_data import prepare_volumes
 from src.ct_anomaly.evaluation.round_trip_score import compute_round_trip_scores
 from src.ct_anomaly.evaluation.vqvae_score import compute_quantization_scores
-
-
-def get_reconstruction(model_output):
-    """
-    Unpack the model output to get the reconstructed volumes.
-    If the model output is a tuple, return the first element (reconstructed volumes). Otherwise, return the model output as is.
-    """
-    if isinstance(model_output, tuple):
-        return model_output[0]
-    return model_output
+from src.ct_anomaly.models.model_output import get_reconstruction
 
 
 def wrap_reconstruction_loss(loss_fn):
@@ -212,9 +203,9 @@ def validate_epoch(
         raise ValueError("Validation loader contains no healthy volumes.")
 
     healthy_loss = float(sum(healthy_losses) / len(healthy_losses))
-    metrics = compute_all_metrics(all_labels, all_scores)
+    metrics = compute_threshold_free_metrics(all_labels, all_scores)
 
-    feature_metrics = compute_all_metrics(all_labels, all_feature_scores)
+    feature_metrics = compute_threshold_free_metrics(all_labels, all_feature_scores)
     for name in feature_metrics:
         metrics["feature_" + name] = feature_metrics[name]
 
@@ -234,7 +225,9 @@ def validate_epoch(
         )
 
     if len(all_quantization_scores) > 0:
-        quantization_metrics = compute_all_metrics(all_labels, all_quantization_scores)
+        quantization_metrics = compute_threshold_free_metrics(
+            all_labels, all_quantization_scores
+        )
         for name in quantization_metrics:
             metrics["quantization_" + name] = quantization_metrics[name]
 

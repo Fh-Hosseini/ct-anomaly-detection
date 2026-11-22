@@ -34,7 +34,9 @@ def find_threshold_for_sensitivity(labels, probs, target_sensitivity):
     return thresholds[valid_indices[np.argmin(fp_rate[valid_indices])]]
 
 
-def find_cost_weighted_threshold(labels, probs, cost_of_missed_case, cost_of_false_alarm):
+def find_cost_weighted_threshold(
+    labels, probs, cost_of_missed_case, cost_of_false_alarm
+):
     """
     Minimizes total weighted cost: cost_of_missed_case * (missed real
     cases) + cost_of_false_alarm * (false alarms).

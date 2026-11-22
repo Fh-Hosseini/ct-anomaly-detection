@@ -15,7 +15,7 @@ from configs.resnet_baseline_config import *
 from src.ct_anomaly.data.dataset import CTDataset
 from src.ct_anomaly.models.resnet3d import resnet3d
 from src.ct_anomaly.training.resnet_trainer import train
-from src.ct_anomaly.evaluation.experiment_log import save_config_info
+from src.ct_anomaly.utils.experiment_log import save_config_info
 
 
 def main():

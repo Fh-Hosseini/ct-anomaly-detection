@@ -7,6 +7,7 @@ Threshold-free metrics:
 Threshold-based metrics :
     Accuracy, F1, Precision (PPV), NPV, Sensitivity (Recall), Specificity
 """
+
 import numpy as np
 
 from sklearn.metrics import (
@@ -59,9 +60,9 @@ def specificity_at_sensitivity(labels, probs, target_sensitivity=0.95):
 
 def specificity_at_threshold(labels, probs, threshold):
     predictions = _predictions_at_threshold(probs, threshold)
-    tn, fp, fn, tp = confusion_matrix(labels, predictions).ravel()
+    tn, fp, _, _ = confusion_matrix(labels, predictions, labels=[0, 1]).ravel()
     return tn / (tn + fp) if (tn + fp) > 0 else 0.0
-    
+
 
 def _predictions_at_threshold(probs, threshold):
     return (np.array(probs) >= threshold).astype(int)
@@ -72,6 +73,7 @@ def accuracy(labels, probs, threshold=THRESHOLD):
     predictions = _predictions_at_threshold(probs, threshold)
     return accuracy_score(labels, predictions)
 
+
 def sensitivity(labels, probs, threshold=THRESHOLD):
     # Sensitivity = Recall = true positive rate.
     # of all actual anomaly cases, what fraction did the model correctly catch?
@@ -79,36 +81,51 @@ def sensitivity(labels, probs, threshold=THRESHOLD):
     predictions = _predictions_at_threshold(probs, threshold)
     return recall_score(labels, predictions, zero_division=0)
 
+
 def precision(labels, probs, threshold=THRESHOLD):
     # Precision = PPV
-    # of everything the model predict as anomaly, what fraction really were? 
-    # if the model says anomaly, how much should we trust that? 
+    # of everything the model predict as anomaly, what fraction really were?
+    # if the model says anomaly, how much should we trust that?
     predictions = _predictions_at_threshold(probs, threshold)
     return precision_score(labels, predictions, zero_division=0)
 
 
 def f1(labels, probs, threshold=THRESHOLD):
-    # balancing precision and sensitivity together. 
+    # balancing precision and sensitivity together.
     predictions = _predictions_at_threshold(probs, threshold)
     return f1_score(labels, predictions, zero_division=0)
 
 
 def specificity(labels, probs, threshold=THRESHOLD):
     # tn rate = tn / (tn + fp).
-    # of all actual healthy cases, what fraction did the model correctly leave alone? 
+    # of all actual healthy cases, what fraction did the model correctly leave alone?
     # High specificity = few false alarms (few fp).
     predictions = _predictions_at_threshold(probs, threshold)
-    tn, fp, fn, tp = confusion_matrix(labels, predictions).ravel()
+    tn, fp, _, _ = confusion_matrix(labels, predictions, labels=[0, 1]).ravel()
     return tn / (tn + fp) if (tn + fp) > 0 else 0.0
 
 
 def npv(labels, probs, threshold=THRESHOLD):
     # tn / (tn + fn).
-    # of everything the model predict as healthy, what fraction really were? 
+    # of everything the model predict as healthy, what fraction really were?
     # if the model says healthy, how confident can we be?
     predictions = _predictions_at_threshold(probs, threshold)
-    tn, fp, fn, tp = confusion_matrix(labels, predictions).ravel()
+    tn, _, fn, _ = confusion_matrix(labels, predictions, labels=[0, 1]).ravel()
     return tn / (tn + fn) if (tn + fn) > 0 else 0.0
+
+
+def compute_threshold_free_metrics(labels, scores):
+
+    return {
+        "auroc": auroc(labels, scores),
+        "average_precision": average_precision(labels, scores),
+        "specificity_at_95_sensitivity": specificity_at_sensitivity(
+            labels, scores, 0.95
+        ),
+        "specificity_at_99_sensitivity": specificity_at_sensitivity(
+            labels, scores, 0.99
+        ),
+    }
 
 
 def compute_all_metrics(labels, probs, threshold=THRESHOLD):
@@ -116,10 +133,7 @@ def compute_all_metrics(labels, probs, threshold=THRESHOLD):
     computes all metric above and returns them as a dict
     """
     return {
-        "auroc": auroc(labels, probs),
-        "average_precision": average_precision(labels, probs),
-        "specificity_at_95_sensitivity": specificity_at_sensitivity(labels, probs, 0.95),
-        "specificity_at_99_sensitivity": specificity_at_sensitivity(labels, probs, 0.99),
+        **compute_threshold_free_metrics(labels, probs),
         "accuracy": accuracy(labels, probs, threshold),
         "sensitivity": sensitivity(labels, probs, threshold),
         "specificity": specificity(labels, probs, threshold),
